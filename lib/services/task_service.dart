@@ -1,26 +1,28 @@
 import '../models/task.dart';
+import '../repositories/task_repository.dart';
 
 class TaskService {
-  final List<Task> _tasks = <Task>[];
+  TaskService(this._repository);
 
-  Future<List<Task>> fetchTasks() async {
-    return List<Task>.from(_tasks);
+  final TaskRepository _repository;
+
+  Future<List<Task>> getTasks() {
+    return _repository.getTasks();
   }
 
-  Future<void> addTask(Task task) async {
-    _tasks.add(task);
+  Future<void> addTask(Task task) {
+    return _repository.addTask(task);
   }
 
-  Future<void> updateTask(Task task) async {
-    final int index = _tasks.indexWhere((Task item) => item.id == task.id);
-    if (index == -1) {
-      return;
-    }
-
-    _tasks[index] = task;
+  Future<void> updateTask(Task task) {
+    return _repository.updateTask(task);
   }
 
-  Future<void> deleteTask(String id) async {
-    _tasks.removeWhere((Task task) => task.id == id);
+  Future<void> deleteTask(String taskId) {
+    return _repository.deleteTask(taskId);
+  }
+
+  Future<void> syncTasks() {
+    return _repository.syncTasks();
   }
 }

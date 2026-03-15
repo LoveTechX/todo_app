@@ -1,18 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../models/task.dart';
+import '../state/todo_provider.dart';
 import 'priority_badge.dart';
 
 class TaskItem extends StatelessWidget {
-  const TaskItem({
-    super.key,
-    required this.task,
-    required this.onToggle,
-    required this.onDelete,
-  });
+  const TaskItem({super.key, required this.task, required this.onDelete});
 
   final Task task;
-  final VoidCallback onToggle;
   final VoidCallback onDelete;
 
   @override
@@ -22,7 +18,7 @@ class TaskItem extends StatelessWidget {
       child: ListTile(
         leading: Checkbox(
           value: task.isCompleted,
-          onChanged: (_) => onToggle(),
+          onChanged: (_) => context.read<TodoProvider>().toggleTask(task),
         ),
         title: Text(
           task.title,

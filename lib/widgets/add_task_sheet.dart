@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../models/task.dart';
+import '../state/todo_provider.dart';
 
 class AddTaskSheet extends StatefulWidget {
-  const AddTaskSheet({super.key, required this.onAddTask});
-
-  final void Function(String title, TaskPriority priority) onAddTask;
+  const AddTaskSheet({super.key});
 
   @override
   State<AddTaskSheet> createState() => _AddTaskSheetState();
@@ -21,9 +22,28 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
     super.dispose();
   }
 
-  void _submit() {
-    widget.onAddTask(_titleController.text, _selectedPriority);
-    Navigator.of(context).pop();
+  Future<void> _submit() async {
+    final String trimmed = _titleController.text.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+
+    final Task task = Task(
+      id: const Uuid().v4(),
+      title: trimmed,
+      priority: _selectedPriority,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+      isSynced: false,
+      isCompleted: false,
+    );
+
+    final TodoProvider provider = context.read<TodoProvider>();
+    await provider.addTask(task);
+
+    if (mounted) {
+      Navigator.pop(context);
+    }
   }
 
   @override
