@@ -31,24 +31,37 @@ import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (Firebase.apps.isEmpty) {
-    await Firebase.initializeApp();
+
+  // Safe Firebase initialization
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp();
+    }
+  } catch (e) {
+    debugPrint("Firebase init failed: $e");
   }
+
+  // Initialize Hive
   await Hive.initFlutter();
-  if (!Hive.isBoxOpen('tasks')) {
-    await Hive.openBox<Map>('tasks');
-  }
 
-  if (!Hive.isBoxOpen(TaskHistoryService.boxName)) {
-    await Hive.openBox<Map>(TaskHistoryService.boxName);
-  }
+  try {
+    if (!Hive.isBoxOpen('tasks')) {
+      await Hive.openBox<Map>('tasks');
+    }
 
-  if (!Hive.isBoxOpen(FocusIntegrityService.boxName)) {
-    await Hive.openBox<Map>(FocusIntegrityService.boxName);
-  }
+    if (!Hive.isBoxOpen(TaskHistoryService.boxName)) {
+      await Hive.openBox<Map>(TaskHistoryService.boxName);
+    }
 
-  if (!Hive.isBoxOpen(BehaviorPredictionService.boxName)) {
-    await Hive.openBox<Map>(BehaviorPredictionService.boxName);
+    if (!Hive.isBoxOpen(FocusIntegrityService.boxName)) {
+      await Hive.openBox<Map>(FocusIntegrityService.boxName);
+    }
+
+    if (!Hive.isBoxOpen(BehaviorPredictionService.boxName)) {
+      await Hive.openBox<Map>(BehaviorPredictionService.boxName);
+    }
+  } catch (e) {
+    debugPrint("Hive init error: $e");
   }
 
   runApp(const RootApp());
@@ -74,7 +87,7 @@ class _RootAppState extends State<RootApp> {
   Widget build(BuildContext context) {
     return StreamBuilder(
       stream: _authService.authStateChanges(),
-      builder: (BuildContext context, AsyncSnapshot<dynamic> snapshot) {
+      builder: (BuildContext context, AsyncSnapshot snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
@@ -137,11 +150,13 @@ class _TodoAppState extends State<TodoApp> {
 
     final LocalTaskSource localTaskSource = LocalTaskSource();
     final RemoteTaskSource remoteTaskSource = RemoteTaskSource();
+
     _syncService = SyncService(
       localTaskSource: localTaskSource,
       remoteTaskSource: remoteTaskSource,
       authService: authService,
     );
+
     final TaskRepository taskRepository = TaskRepositoryImpl(
       localSource: localTaskSource,
       remoteSource: remoteTaskSource,
@@ -152,6 +167,7 @@ class _TodoAppState extends State<TodoApp> {
     final TaskHistoryService historyService = TaskHistoryService();
     final BehaviorPredictionService behaviorPredictionService =
         BehaviorPredictionService();
+
     final SchedulePlannerService plannerService = SchedulePlannerService(
       historyService: historyService,
       behaviorPredictionService: behaviorPredictionService,
@@ -161,15 +177,18 @@ class _TodoAppState extends State<TodoApp> {
       taskService: TaskService(taskRepository),
       enableSyncMonitor: widget.enableBackgroundMonitors,
     );
+
     _plannerProvider = PlannerProvider(
       taskProvider: _taskProvider,
       plannerService: plannerService,
       enableDriftMonitor: widget.enableBackgroundMonitors,
     );
+
     _analyticsProvider = AnalyticsProvider(
       focusIntegrityService: FocusIntegrityService(),
       behaviorPredictionService: behaviorPredictionService,
     );
+
     _focusProvider = FocusProvider(
       focusTimerService: FocusTimerService(),
       historyService: historyService,
@@ -177,10 +196,13 @@ class _TodoAppState extends State<TodoApp> {
       plannerProvider: _plannerProvider,
       analyticsProvider: _analyticsProvider,
     );
+
     _focusRoomService = FocusRoomService();
+
     _focusRoomsProvider = FocusRoomsProvider(
       focusRoomService: _focusRoomService,
     );
+
     _productivityCoachProvider = ProductivityCoachProvider(
       coachService: ProductivityCoachService(historyService: historyService),
       analyticsProvider: _analyticsProvider,
