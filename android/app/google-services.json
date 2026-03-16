@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "240383588651",
+    "project_id": "layered-todo",
+    "storage_bucket": "layered-todo.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:240383588651:android:35fed468d294de700d2d6e",
+        "android_client_info": {
+          "package_name": "com.example.todo_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCqDWhe9KKbBV5gk_woaovKxv0g_F8kqFw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
