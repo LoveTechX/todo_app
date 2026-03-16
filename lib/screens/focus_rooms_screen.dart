@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/focus_room.dart';
-import '../services/focus_room_service.dart';
-import '../state/todo_provider.dart';
+import '../state/focus_provider.dart';
+import '../state/focus_rooms_provider.dart';
 
 class FocusRoomsScreen extends StatefulWidget {
   const FocusRoomsScreen({super.key});
@@ -13,132 +13,227 @@ class FocusRoomsScreen extends StatefulWidget {
 }
 
 class _FocusRoomsScreenState extends State<FocusRoomsScreen> {
-  final FocusRoomService _focusRoomService = FocusRoomService();
-  String? _joinedRoomId;
+  static const String _focusRoomsHeroTag = 'focus-rooms-screen-hero';
 
-  @override
-  void dispose() {
-    final String? roomId = _joinedRoomId;
-    if (roomId != null) {
-      _focusRoomService.leaveRoom(roomId);
-    }
-    super.dispose();
-  }
+  final TextEditingController _nameController = TextEditingController();
 
   Future<void> _joinRoom(FocusRoom room) async {
-    if (_joinedRoomId != null && _joinedRoomId != room.id) {
-      await _focusRoomService.leaveRoom(_joinedRoomId!);
-    }
-
-    await _focusRoomService.joinRoom(room.id);
+    await context.read<FocusRoomsProvider>().joinRoom(room.id);
     if (!mounted) {
       return;
     }
 
-    setState(() {
-      _joinedRoomId = room.id;
-    });
-
-    context.read<TodoProvider>().startFocusTimer();
+    context.read<FocusProvider>().startFocusTimer();
   }
 
   Future<void> _leaveRoom(FocusRoom room) async {
-    await _focusRoomService.leaveRoom(room.id);
-    if (!mounted) {
+    await context.read<FocusRoomsProvider>().leaveRoom(room.id);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _showCreateRoomDialog(BuildContext context) async {
+    _nameController.clear();
+    final int? duration = await showDialog<int>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final TextEditingController durationController = TextEditingController(
+          text: '25',
+        );
+        return AlertDialog(
+          title: const Text('Create Focus Room'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: 'Room name'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: durationController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Duration (minutes)',
+                ),
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final int parsedDuration =
+                    int.tryParse(durationController.text.trim()) ?? 25;
+                Navigator.of(dialogContext).pop(parsedDuration);
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!context.mounted || duration == null) {
       return;
     }
 
-    setState(() {
-      if (_joinedRoomId == room.id) {
-        _joinedRoomId = null;
-      }
-    });
+    await context.read<FocusRoomsProvider>().createRoom(
+      name: _nameController.text,
+      durationMinutes: duration,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final FocusRoomsProvider roomsProvider = context
+        .watch<FocusRoomsProvider>();
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Focus Rooms')),
-      body: StreamBuilder<List<FocusRoom>>(
-        stream: _focusRoomService.getRooms(),
-        builder:
-            (BuildContext context, AsyncSnapshot<List<FocusRoom>> snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
+      appBar: AppBar(
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const <Widget>[
+            Hero(tag: _focusRoomsHeroTag, child: Icon(Icons.groups)),
+            SizedBox(width: 8),
+            Text('Focus Rooms'),
+          ],
+        ),
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Create room',
+            onPressed: () => _showCreateRoomDialog(context),
+            icon: const Icon(Icons.add),
+          ),
+        ],
+      ),
+      body: Builder(
+        builder: (BuildContext context) {
+          if (roomsProvider.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-              final List<FocusRoom> rooms = snapshot.data ?? <FocusRoom>[];
-              if (rooms.isEmpty) {
-                return const Center(
-                  child: Text('No active focus rooms right now.'),
-                );
-              }
+          final List<FocusRoom> rooms = roomsProvider.rooms;
+          if (rooms.isEmpty) {
+            return const Center(
+              child: Text('No active focus rooms right now.'),
+            );
+          }
 
-              final FocusRoom? joinedRoom = _joinedRoomId == null
-                  ? null
-                  : rooms.cast<FocusRoom?>().firstWhere(
-                      (FocusRoom? room) => room?.id == _joinedRoomId,
-                      orElse: () => null,
-                    );
+          final FocusRoom? joinedRoom = roomsProvider.joinedRoom;
 
-              return Column(
-                children: <Widget>[
-                  if (joinedRoom != null)
-                    Card(
-                      margin: const EdgeInsets.all(12),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text(
-                              'Active Participants',
-                              style: Theme.of(context).textTheme.titleMedium,
+          return Column(
+            children: <Widget>[
+              if (joinedRoom != null)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOut,
+                  margin: const EdgeInsets.all(12),
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'You are in ${joinedRoom.name}',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          AnimatedOpacity(
+                            duration: const Duration(milliseconds: 220),
+                            opacity: 1,
+                            child: Text(
+                              '${joinedRoom.activeUsers.length} active users • ${joinedRoom.durationMinutes} min',
                             ),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: joinedRoom.participants
-                                  .map(
-                                    (String participant) =>
-                                        Chip(label: Text(participant)),
-                                  )
-                                  .toList(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              if (roomsProvider.errorMessage != null)
+                AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: 1,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      roomsProvider.errorMessage!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: rooms.length,
+                  itemBuilder: (BuildContext context, int index) {
+                    final FocusRoom room = rooms[index];
+                    final bool isJoined = roomsProvider.isUserInRoom(room.id);
+                    return TweenAnimationBuilder<double>(
+                      tween: Tween<double>(begin: 0, end: 1),
+                      duration: Duration(
+                        milliseconds: 220 + (index * 30).clamp(0, 300),
+                      ),
+                      curve: Curves.easeOutCubic,
+                      builder:
+                          (BuildContext context, double value, Widget? child) {
+                            return Opacity(
+                              opacity: value,
+                              child: Transform.translate(
+                                offset: Offset(0, (1 - value) * 14),
+                                child: child,
+                              ),
+                            );
+                          },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 260),
+                        curve: Curves.easeOut,
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: Theme.of(context).colorScheme.surface,
+                          boxShadow: <BoxShadow>[
+                            BoxShadow(
+                              color: Colors.black.withValues(
+                                alpha: isJoined ? 0.12 : 0.06,
+                              ),
+                              blurRadius: isJoined ? 12 : 8,
+                              offset: const Offset(0, 4),
                             ),
                           ],
                         ),
+                        child: ListTile(
+                          title: Text(room.name),
+                          subtitle: Text(
+                            '${room.activeUsers.length} users • ${room.durationMinutes} min',
+                          ),
+                          trailing: ElevatedButton(
+                            onPressed: () =>
+                                isJoined ? _leaveRoom(room) : _joinRoom(room),
+                            child: Text(isJoined ? 'Leave' : 'Join'),
+                          ),
+                        ),
                       ),
-                    ),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: rooms.length,
-                      itemBuilder: (BuildContext context, int index) {
-                        final FocusRoom room = rooms[index];
-                        final bool isJoined = room.id == _joinedRoomId;
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          child: ListTile(
-                            title: Text(room.name),
-                            subtitle: Text(
-                              '${room.participants.length} participants',
-                            ),
-                            trailing: ElevatedButton(
-                              onPressed: () =>
-                                  isJoined ? _leaveRoom(room) : _joinRoom(room),
-                              child: Text(isJoined ? 'Leave' : 'Join'),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              );
-            },
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

@@ -29,6 +29,7 @@ extension TaskPriorityX on TaskPriority {
 class Task {
   const Task({
     required this.id,
+    required this.userId,
     required this.title,
     required this.priority,
     required this.createdAt,
@@ -41,6 +42,7 @@ class Task {
   });
 
   final String id;
+  final String userId;
   final String title;
   final TaskPriority priority;
   final CognitiveLoad cognitiveLoad;
@@ -53,6 +55,7 @@ class Task {
 
   Task copyWith({
     String? id,
+    String? userId,
     String? title,
     TaskPriority? priority,
     CognitiveLoad? cognitiveLoad,
@@ -65,6 +68,7 @@ class Task {
   }) {
     return Task(
       id: id ?? this.id,
+      userId: userId ?? this.userId,
       title: title ?? this.title,
       priority: priority ?? this.priority,
       cognitiveLoad: cognitiveLoad ?? this.cognitiveLoad,
@@ -81,6 +85,7 @@ class Task {
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
       'id': id,
+      'userId': userId,
       'title': title,
       'priority': priority.name,
       'cognitiveLoad': cognitiveLoad.name,
@@ -115,6 +120,7 @@ class Task {
 
     return Task(
       id: map['id'] as String? ?? '',
+      userId: map['userId'] as String? ?? '',
       title: map['title'] as String? ?? '',
       priority: parsedPriority,
       cognitiveLoad: parsedCognitiveLoad,
@@ -131,4 +137,11 @@ class Task {
       isCompleted: map['isCompleted'] as bool? ?? false,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is Task && other.id == id;
+
+  @override
+  int get hashCode => id.hashCode;
 }

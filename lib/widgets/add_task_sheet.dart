@@ -3,7 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/task.dart';
-import '../state/todo_provider.dart';
+import '../services/auth_service.dart';
+import '../state/task_provider.dart';
 
 class AddTaskSheet extends StatefulWidget {
   const AddTaskSheet({super.key});
@@ -28,8 +29,12 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
       return;
     }
 
+    final String userId =
+        AuthService().getCurrentUser()?.uid ?? 'anonymous_local_user';
+
     final Task task = Task(
       id: const Uuid().v4(),
+      userId: userId,
       title: trimmed,
       priority: _selectedPriority,
       createdAt: DateTime.now(),
@@ -38,7 +43,7 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
       isCompleted: false,
     );
 
-    final TodoProvider provider = context.read<TodoProvider>();
+    final TaskProvider provider = context.read<TaskProvider>();
     await provider.addTask(task);
 
     if (mounted) {
@@ -73,7 +78,7 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<TaskPriority>(
-            value: _selectedPriority,
+            initialValue: _selectedPriority,
             decoration: const InputDecoration(
               labelText: 'Priority',
               border: OutlineInputBorder(),

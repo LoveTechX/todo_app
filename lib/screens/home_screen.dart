@@ -3,29 +3,76 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/task.dart';
+import '../screens/analytics_dashboard_screen.dart';
 import '../screens/focus_rooms_screen.dart';
 import '../services/command_palette_service.dart';
-import '../state/todo_provider.dart';
+import '../services/search_service.dart';
+import '../services/sync_service.dart';
+import '../services/task_history_service.dart';
+import '../state/analytics_provider.dart';
+import '../state/focus_provider.dart';
+import '../state/planner_provider.dart';
+import '../state/task_provider.dart';
 import '../widgets/add_task_sheet.dart';
 import '../widgets/command_palette.dart';
 import '../widgets/daily_plan_timeline.dart';
 import '../widgets/focus_timer_card.dart';
+import '../widgets/global_search_bar.dart';
+import '../widgets/sync_status_indicator.dart';
 import '../widgets/task_item.dart';
 
 class _OpenCommandPaletteIntent extends Intent {
   const _OpenCommandPaletteIntent();
 }
 
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key, required this.syncService});
+
+  final SyncService syncService;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late final SearchService _searchService;
+  late final TaskHistoryService _taskHistoryService;
 
   static const CommandPaletteService _commandPaletteService =
       CommandPaletteService();
 
+  static const String _analyticsHeroTag = 'analytics-screen-hero';
+  static const String _focusRoomsHeroTag = 'focus-rooms-screen-hero';
+
+  @override
+  void initState() {
+    super.initState();
+    _taskHistoryService = TaskHistoryService();
+    _searchService = SearchService(historyService: _taskHistoryService);
+  }
+
+  @override
+  void dispose() {
+    _searchService.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final TodoProvider provider = context.watch<TodoProvider>();
-    final Task? recommendedTask = provider.recommendedTask;
+    final TaskProvider taskProvider = context.watch<TaskProvider>();
+    final PlannerProvider plannerProvider = context.watch<PlannerProvider>();
+    final AnalyticsProvider analyticsProvider = context
+        .watch<AnalyticsProvider>();
+    final FocusProvider focusProvider = context.watch<FocusProvider>();
+    final Task? recommendedTask = taskProvider.recommendedTask;
+
+    _searchService.updateSearchContext(
+      tasks: taskProvider.tasks,
+      focusEvents: analyticsProvider.focusEvents,
+      focusScore: analyticsProvider.focusScore,
+      skippedTasksToday: analyticsProvider.skippedTasksToday,
+      difficultTasksCount: analyticsProvider.difficultTasksCount,
+    );
 
     return Shortcuts(
       shortcuts: const <ShortcutActivator, Intent>{
@@ -49,23 +96,39 @@ class HomeScreen extends StatelessWidget {
             appBar: AppBar(
               title: const Text('Layered Todo'),
               actions: <Widget>[
+                SyncStatusIndicator(syncService: widget.syncService),
+                IconButton(
+                  tooltip: 'Analytics Dashboard',
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      _buildSlideFadeRoute<void>(
+                        const AnalyticsDashboardScreen(),
+                      ),
+                    );
+                  },
+                  icon: const Hero(
+                    tag: _analyticsHeroTag,
+                    child: Icon(Icons.analytics_outlined),
+                  ),
+                ),
                 IconButton(
                   tooltip: 'Focus Rooms',
                   onPressed: () {
                     Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const FocusRoomsScreen(),
-                      ),
+                      _buildSlideFadeRoute<void>(const FocusRoomsScreen()),
                     );
                   },
-                  icon: const Icon(Icons.groups),
+                  icon: const Hero(
+                    tag: _focusRoomsHeroTag,
+                    child: Icon(Icons.groups),
+                  ),
                 ),
               ],
             ),
             body: SafeArea(
               child: Builder(
                 builder: (BuildContext context) {
-                  if (provider.isLoading) {
+                  if (taskProvider.isLoading) {
                     return const Center(child: CircularProgressIndicator());
                   }
 
@@ -74,15 +137,18 @@ class HomeScreen extends StatelessWidget {
                     child: Column(
                       children: <Widget>[
                         FocusTimerCard(
-                          formattedTime: provider.formattedRemainingTime,
-                          durationMinutes: provider.focusDurationMinutes,
-                          isRunning: provider.isTimerRunning,
-                          onDurationChanged: provider.setFocusDurationMinutes,
-                          onStartPause: provider.isTimerRunning
-                              ? provider.pauseFocusTimer
-                              : provider.startFocusTimer,
-                          onReset: provider.resetFocusTimer,
+                          remainingSecondsListenable:
+                              focusProvider.remainingSecondsNotifier,
+                          durationMinutes: focusProvider.focusDurationMinutes,
+                          isRunning: focusProvider.isTimerRunning,
+                          onDurationChanged:
+                              focusProvider.setFocusDurationMinutes,
+                          onStartPause: focusProvider.isTimerRunning
+                              ? focusProvider.pauseFocusTimer
+                              : focusProvider.startFocusTimer,
+                          onReset: focusProvider.resetFocusTimer,
                         ),
+                        GlobalSearchBar(searchService: _searchService),
                         Padding(
                           padding: const EdgeInsets.all(16),
                           child: Card(
@@ -115,7 +181,7 @@ class HomeScreen extends StatelessWidget {
                                         const Icon(Icons.bolt, size: 18),
                                         const SizedBox(width: 6),
                                         Text(
-                                          'Focus Score: ${provider.focusScore}',
+                                          'Focus Score: ${analyticsProvider.focusScore}',
                                         ),
                                       ],
                                     ),
@@ -135,12 +201,14 @@ class HomeScreen extends StatelessWidget {
                                     const SizedBox(height: 12),
                                     ElevatedButton(
                                       onPressed:
-                                          provider.isFocusing &&
-                                              provider.activeFocusTask?.id ==
+                                          focusProvider.isFocusing &&
+                                              focusProvider
+                                                      .activeFocusTask
+                                                      ?.id ==
                                                   recommendedTask.id
                                           ? null
                                           : () => context
-                                                .read<TodoProvider>()
+                                                .read<FocusProvider>()
                                                 .startFocus(recommendedTask),
                                       child: const Text('Start Focus'),
                                     ),
@@ -166,7 +234,9 @@ class HomeScreen extends StatelessWidget {
                                     ).textTheme.titleMedium,
                                   ),
                                   const SizedBox(height: 8),
-                                  Text(provider.todaysStrategy.message),
+                                  Text(
+                                    analyticsProvider.todaysStrategy.message,
+                                  ),
                                 ],
                               ),
                             ),
@@ -185,7 +255,9 @@ class HomeScreen extends StatelessWidget {
                                 onPressed: () =>
                                     _showAvailableMinutesDialog(context),
                                 icon: const Icon(Icons.schedule),
-                                label: Text('${provider.availableMinutes} min'),
+                                label: Text(
+                                  '${plannerProvider.availableMinutes} min',
+                                ),
                               ),
                             ],
                           ),
@@ -202,13 +274,13 @@ class HomeScreen extends StatelessWidget {
                               ),
                               const Spacer(),
                               Text(
-                                '${provider.completedCount}/${provider.tasks.length} done',
+                                '${taskProvider.completedCount}/${taskProvider.tasks.length} done',
                               ),
                             ],
                           ),
                         ),
                         const SizedBox(height: 8),
-                        if (provider.tasks.isEmpty)
+                        if (taskProvider.tasks.isEmpty)
                           const Padding(
                             padding: EdgeInsets.symmetric(vertical: 24),
                             child: Center(
@@ -221,12 +293,14 @@ class HomeScreen extends StatelessWidget {
                           ListView.builder(
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
-                            itemCount: provider.tasks.length,
+                            itemCount: taskProvider.tasks.length,
                             itemBuilder: (BuildContext context, int index) {
-                              final Task task = provider.tasks[index];
+                              final Task task = taskProvider.tasks[index];
                               return TaskItem(
                                 task: task,
-                                onDelete: () => provider.deleteTask(task.id),
+                                animationIndex: index,
+                                onDelete: () =>
+                                    taskProvider.deleteTask(task.id),
                               );
                             },
                           ),
@@ -255,6 +329,49 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  PageRoute<T> _buildSlideFadeRoute<T>(Widget page) {
+    return PageRouteBuilder<T>(
+      transitionDuration: const Duration(milliseconds: 360),
+      reverseTransitionDuration: const Duration(milliseconds: 280),
+      pageBuilder:
+          (
+            BuildContext context,
+            Animation<double> animation,
+            Animation<double> secondaryAnimation,
+          ) {
+            return page;
+          },
+      transitionsBuilder:
+          (
+            BuildContext context,
+            Animation<double> animation,
+            Animation<double> secondaryAnimation,
+            Widget child,
+          ) {
+            final Animation<double> fade = CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOut,
+            );
+
+            final Animation<Offset> slide =
+                Tween<Offset>(
+                  begin: const Offset(0.06, 0),
+                  end: Offset.zero,
+                ).animate(
+                  CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                  ),
+                );
+
+            return FadeTransition(
+              opacity: fade,
+              child: SlideTransition(position: slide, child: child),
+            );
+          },
+    );
+  }
+
   void _showAddTaskSheet(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
@@ -264,7 +381,7 @@ class HomeScreen extends StatelessWidget {
   }
 
   Future<void> _showAvailableMinutesDialog(BuildContext context) async {
-    final TodoProvider provider = context.read<TodoProvider>();
+    final PlannerProvider provider = context.read<PlannerProvider>();
     final TextEditingController controller = TextEditingController(
       text: provider.availableMinutes.toString(),
     );
@@ -299,8 +416,12 @@ class HomeScreen extends StatelessWidget {
 
     controller.dispose();
 
+    if (!context.mounted) {
+      return;
+    }
+
     if (selectedMinutes != null) {
-      context.read<TodoProvider>().setAvailableMinutes(selectedMinutes);
+      context.read<PlannerProvider>().setAvailableMinutes(selectedMinutes);
     }
   }
 }

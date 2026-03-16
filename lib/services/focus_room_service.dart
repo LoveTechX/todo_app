@@ -1,74 +1,116 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
+
 import 'package:uuid/uuid.dart';
 
 import '../models/focus_room.dart';
 
 class FocusRoomService {
-  FocusRoomService({FirebaseFirestore? firestore, String? userId})
-    : _firestore = firestore,
-      _userId = userId ?? const Uuid().v4();
+  FocusRoomService({String? userId}) : _userId = userId ?? const Uuid().v4() {
+    _seedDefaultRooms();
+    _emitRooms();
+  }
 
-  final FirebaseFirestore? _firestore;
   final String _userId;
+  final Uuid _uuid = const Uuid();
+  final Map<String, FocusRoom> _roomsById = <String, FocusRoom>{};
+  final StreamController<List<FocusRoom>> _roomsController =
+      StreamController<List<FocusRoom>>.broadcast();
 
-  FirebaseFirestore? get _safeFirestore {
-    if (_firestore != null) {
-      return _firestore;
-    }
+  String get currentUserId => _userId;
+  Stream<List<FocusRoom>> get roomsStream => _roomsController.stream;
 
-    try {
-      return FirebaseFirestore.instance;
-    } catch (_) {
-      return null;
-    }
-  }
+  Future<FocusRoom> createRoom({
+    required String name,
+    int durationMinutes = 25,
+  }) async {
+    final DateTime now = DateTime.now();
+    final FocusRoom room = FocusRoom(
+      id: _uuid.v4(),
+      name: name.trim().isEmpty ? 'Focus Room' : name.trim(),
+      activeUsers: <String>[_userId],
+      startTime: now,
+      durationMinutes: durationMinutes,
+    );
 
-  CollectionReference<Map<String, dynamic>>? get _roomsCollection {
-    final FirebaseFirestore? firestore = _safeFirestore;
-    if (firestore == null) {
-      return null;
-    }
-
-    return firestore.collection('focus_rooms');
-  }
-
-  Stream<List<FocusRoom>> getRooms() {
-    final CollectionReference<Map<String, dynamic>>? rooms = _roomsCollection;
-    if (rooms == null) {
-      return Stream<List<FocusRoom>>.value(<FocusRoom>[]);
-    }
-
-    return rooms.snapshots().map((
-      QuerySnapshot<Map<String, dynamic>> snapshot,
-    ) {
-      return snapshot.docs
-          .map(
-            (QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
-                FocusRoom.fromMap(doc.id, doc.data()),
-          )
-          .toList();
-    });
+    _roomsById[room.id] = room;
+    _emitRooms();
+    return room;
   }
 
   Future<void> joinRoom(String roomId) async {
-    final CollectionReference<Map<String, dynamic>>? rooms = _roomsCollection;
-    if (rooms == null) {
+    final FocusRoom? room = _roomsById[roomId];
+    if (room == null) {
       return;
     }
 
-    await rooms.doc(roomId).set(<String, dynamic>{
-      'participants': FieldValue.arrayUnion(<String>[_userId]),
-    }, SetOptions(merge: true));
+    if (room.activeUsers.contains(_userId)) {
+      return;
+    }
+
+    _roomsById[roomId] = room.copyWith(
+      activeUsers: <String>[...room.activeUsers, _userId],
+    );
+    _emitRooms();
   }
 
   Future<void> leaveRoom(String roomId) async {
-    final CollectionReference<Map<String, dynamic>>? rooms = _roomsCollection;
-    if (rooms == null) {
+    final FocusRoom? room = _roomsById[roomId];
+    if (room == null) {
       return;
     }
 
-    await rooms.doc(roomId).set(<String, dynamic>{
-      'participants': FieldValue.arrayRemove(<String>[_userId]),
-    }, SetOptions(merge: true));
+    final List<String> updatedUsers = room.activeUsers
+        .where((String id) => id != _userId)
+        .toList();
+
+    if (updatedUsers.isEmpty) {
+      _roomsById.remove(roomId);
+    } else {
+      _roomsById[roomId] = room.copyWith(activeUsers: updatedUsers);
+    }
+
+    _emitRooms();
+  }
+
+  List<FocusRoom> getActiveRooms() {
+    final List<FocusRoom> rooms = _roomsById.values.toList()
+      ..sort((FocusRoom a, FocusRoom b) => b.startTime.compareTo(a.startTime));
+    return List<FocusRoom>.unmodifiable(rooms);
+  }
+
+  void dispose() {
+    _roomsController.close();
+  }
+
+  void _emitRooms() {
+    if (_roomsController.isClosed) {
+      return;
+    }
+
+    _roomsController.add(getActiveRooms());
+  }
+
+  void _seedDefaultRooms() {
+    final DateTime now = DateTime.now();
+    final List<FocusRoom> seedRooms = <FocusRoom>[
+      FocusRoom(
+        id: _uuid.v4(),
+        name: 'Morning Deep Work',
+        activeUsers: <String>['designer_01', 'dev_02'],
+        startTime: now.subtract(const Duration(minutes: 12)),
+        durationMinutes: 45,
+      ),
+      FocusRoom(
+        id: _uuid.v4(),
+        name: 'Inbox Zero Sprint',
+        activeUsers: <String>['pm_07'],
+        startTime: now.subtract(const Duration(minutes: 5)),
+        durationMinutes: 25,
+      ),
+    ];
+
+    for (final FocusRoom room in seedRooms) {
+      _roomsById[room.id] = room;
+    }
   }
 }

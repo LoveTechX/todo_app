@@ -3,14 +3,20 @@ import 'package:provider/provider.dart';
 
 import '../models/command.dart';
 import '../models/task.dart';
-import '../state/todo_provider.dart';
+import '../screens/analytics_dashboard_screen.dart';
+import '../screens/focus_rooms_screen.dart';
+import '../state/focus_provider.dart';
+import '../state/planner_provider.dart';
+import '../state/task_provider.dart';
 import '../widgets/add_task_sheet.dart';
 
 class CommandPaletteService {
   const CommandPaletteService();
 
   List<Command> getCommands(BuildContext context) {
-    final TodoProvider provider = context.read<TodoProvider>();
+    final TaskProvider taskProvider = context.read<TaskProvider>();
+    final FocusProvider focusProvider = context.read<FocusProvider>();
+    final PlannerProvider plannerProvider = context.read<PlannerProvider>();
 
     return <Command>[
       Command(
@@ -24,30 +30,40 @@ class CommandPaletteService {
         },
       ),
       Command(
-        title: 'Start Focus Session',
+        title: 'Start Focus',
         action: () {
-          final Task? recommended = provider.recommendedTask;
+          final Task? recommended = taskProvider.recommendedTask;
           if (recommended == null) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('No task available to focus on.')),
             );
             return;
           }
-          provider.startFocus(recommended);
+          focusProvider.startFocus(recommended);
         },
       ),
       Command(
-        title: "Generate Today's Plan",
+        title: 'Open Analytics',
         action: () {
-          provider.regenerateTodayPlan();
-        },
-      ),
-      Command(
-        title: 'View Tasks',
-        action: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('You have ${provider.tasks.length} tasks.')),
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const AnalyticsDashboardScreen(),
+            ),
           );
+        },
+      ),
+      Command(
+        title: 'Join Focus Room',
+        action: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const FocusRoomsScreen()),
+          );
+        },
+      ),
+      Command(
+        title: 'Generate Daily Plan',
+        action: () {
+          plannerProvider.regenerateTodayPlan();
         },
       ),
     ];

@@ -1,31 +1,31 @@
 import '../models/schedule_block.dart';
+import '../models/focus_session.dart';
 import '../models/task.dart';
+import 'adaptive_scheduler_service.dart';
 import 'behavior_prediction_service.dart';
 import 'energy_profile_service.dart';
-import 'focus_engine_service.dart';
 import 'task_history_service.dart';
 
 class SchedulePlannerService {
   SchedulePlannerService({
-    FocusEngineService? focusEngine,
     DateTime Function()? nowProvider,
     TaskHistoryService? historyService,
     BehaviorPredictionService? behaviorPredictionService,
     EnergyProfileService? energyProfile,
-  }) : _focusEngine = focusEngine ?? FocusEngineService(),
-       _nowProvider = nowProvider ?? DateTime.now,
+    AdaptiveSchedulerService? adaptiveScheduler,
+  }) : _nowProvider = nowProvider ?? DateTime.now,
        _historyService = historyService,
        _behaviorPredictionService = behaviorPredictionService,
-       _energyProfile = energyProfile ?? const EnergyProfileService();
+       _energyProfile = energyProfile ?? const EnergyProfileService(),
+       _adaptiveScheduler = adaptiveScheduler ?? AdaptiveSchedulerService();
 
-  static const int _breakMinutes = 5;
   static const int _defaultTaskMinutes = 25;
 
-  final FocusEngineService _focusEngine;
   final DateTime Function() _nowProvider;
   final TaskHistoryService? _historyService;
   final BehaviorPredictionService? _behaviorPredictionService;
   final EnergyProfileService _energyProfile;
+  final AdaptiveSchedulerService _adaptiveScheduler;
   final Map<String, int> _learnedDurations = <String, int>{};
   final Map<String, int> _behaviorDifficulties = <String, int>{};
 
@@ -34,13 +34,27 @@ class SchedulePlannerService {
       return;
     }
 
-    for (final String id in taskIds) {
-      final List sessions = await _historyService.getSessionsForTask(id);
+    final List<MapEntry<String, List>> entries = await Future.wait(
+      taskIds.map((String id) async {
+        final List sessions = await _historyService.getSessionsForTask(id);
+        return MapEntry<String, List>(id, sessions);
+      }),
+    );
+
+    for (final MapEntry<String, List> entry in entries) {
+      final List sessions = entry.value;
       if (sessions.isNotEmpty) {
+        final List<FocusSession> typedSessions = sessions.cast<FocusSession>();
+        for (final FocusSession session in typedSessions) {
+          _adaptiveScheduler.learnFromSession(session);
+        }
+
         final double avg = _historyService.calculateAverageDuration(
-          sessions.cast(),
+          typedSessions,
         );
-        _learnedDurations[id] = avg.round().clamp(1, 480);
+        final int learned = avg.round().clamp(1, 480);
+        _learnedDurations[entry.key] = learned;
+        _adaptiveScheduler.seedTaskEstimate(entry.key, learned);
       }
     }
   }
@@ -50,11 +64,21 @@ class SchedulePlannerService {
       return;
     }
 
-    for (final String id in taskIds) {
-      final behavior = await _behaviorPredictionService.getBehavior(id);
-      _behaviorDifficulties[id] = _behaviorPredictionService
-          .calculateDifficulty(behavior);
+    final List<MapEntry<String, int>> entries = await Future.wait(
+      taskIds.map((String id) async {
+        final behavior = await _behaviorPredictionService.getBehavior(id);
+        final int difficulty = _behaviorPredictionService.calculateDifficulty(
+          behavior,
+        );
+        return MapEntry<String, int>(id, difficulty);
+      }),
+    );
+
+    for (final MapEntry<String, int> entry in entries) {
+      _behaviorDifficulties[entry.key] = entry.value;
     }
+
+    _adaptiveScheduler.updateTaskSkipSignals(_behaviorDifficulties);
   }
 
   List<ScheduleBlock> generateDailyPlan(
@@ -62,121 +86,21 @@ class SchedulePlannerService {
     int availableMinutes, {
     DateTime? startTime,
   }) {
-    final List<Task> candidates = tasks
-        .where((Task task) => !task.isCompleted)
-        .toList();
-
+    final DateTime planStart = startTime ?? _nowProvider();
     final CognitiveLoad preferred = _energyProfile.preferredLoadForTime(
-      _nowProvider(),
+      planStart,
     );
 
-    final List<Task> matching = candidates
-        .where((Task t) => t.cognitiveLoad == preferred)
-        .toList();
-    final List<Task> remaining = candidates
-        .where((Task t) => t.cognitiveLoad != preferred)
-        .toList();
-
-    // Order each partition by focus score independently, then concatenate.
-    // This means matching-load tasks are always scheduled first, but within
-    // each group priority / deadline / age / duration are still respected.
-    final List<Task> orderedTasks = <Task>[
-      ..._orderByBehaviorAndFocus(matching),
-      ..._orderByBehaviorAndFocus(remaining),
-    ];
-
-    final List<ScheduleBlock> plan = <ScheduleBlock>[];
-
-    final int planLimitMinutes = availableMinutes.clamp(0, 24 * 60);
-    int plannedMinutes = 0;
-    DateTime cursor = startTime ?? _nowProvider();
-
-    for (final Task task in orderedTasks) {
-      final int remainingMinutes = planLimitMinutes - plannedMinutes;
-      if (remainingMinutes <= 0) {
-        break;
-      }
-
-      final int taskMinutes = _taskDurationMinutes(task);
-      if (taskMinutes > remainingMinutes) {
-        continue;
-      }
-
-      final DateTime taskEnd = cursor.add(Duration(minutes: taskMinutes));
-      plan.add(
-        ScheduleBlock(
-          startTime: cursor,
-          endTime: taskEnd,
-          task: task,
-          type: ScheduleBlockTypes.task,
-        ),
-      );
-      plannedMinutes += taskMinutes;
-      cursor = taskEnd;
-
-      final int breakRemaining = planLimitMinutes - plannedMinutes;
-      if (breakRemaining <= 0) {
-        break;
-      }
-
-      final int breakMinutes = _breakMinutes <= breakRemaining
-          ? _breakMinutes
-          : breakRemaining;
-      final DateTime breakEnd = cursor.add(Duration(minutes: breakMinutes));
-      plan.add(
-        ScheduleBlock(
-          startTime: cursor,
-          endTime: breakEnd,
-          type: ScheduleBlockTypes.breakTime,
-        ),
-      );
-      plannedMinutes += breakMinutes;
-      cursor = breakEnd;
+    for (final Task task in tasks) {
+      final int learned = _taskDurationMinutes(task);
+      _adaptiveScheduler.seedTaskEstimate(task.id, learned);
     }
 
-    return plan;
-  }
+    _adaptiveScheduler
+      ..setPlanningContext(now: planStart, preferredLoad: preferred)
+      ..updateTaskSkipSignals(_behaviorDifficulties);
 
-  List<Task> _orderByFocusScore(List<Task> tasks) {
-    final List<Task> remaining = List<Task>.from(tasks);
-    final List<Task> ordered = <Task>[];
-
-    while (remaining.isNotEmpty) {
-      final Task? next = _focusEngine.recommendTask(remaining);
-      if (next == null) {
-        break;
-      }
-
-      ordered.add(next);
-      remaining.removeWhere((Task task) => task.id == next.id);
-    }
-
-    return ordered;
-  }
-
-  List<Task> _orderByBehaviorAndFocus(List<Task> tasks) {
-    final List<Task> focusOrdered = _orderByFocusScore(tasks);
-    final Map<String, int> focusIndex = <String, int>{
-      for (int i = 0; i < focusOrdered.length; i++) focusOrdered[i].id: i,
-    };
-
-    final List<Task> reordered = List<Task>.from(focusOrdered);
-    reordered.sort((Task a, Task b) {
-      final int difficultyCompare = _difficultyForTask(
-        b,
-      ).compareTo(_difficultyForTask(a));
-      if (difficultyCompare != 0) {
-        return difficultyCompare;
-      }
-
-      return (focusIndex[a.id] ?? 0).compareTo(focusIndex[b.id] ?? 0);
-    });
-
-    return reordered;
-  }
-
-  int _difficultyForTask(Task task) {
-    return _behaviorDifficulties[task.id] ?? 0;
+    return _adaptiveScheduler.optimizePlan(tasks, availableMinutes);
   }
 
   int _taskDurationMinutes(Task task) {
