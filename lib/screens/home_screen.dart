@@ -12,6 +12,7 @@ import '../services/task_history_service.dart';
 import '../state/analytics_provider.dart';
 import '../state/focus_provider.dart';
 import '../state/planner_provider.dart';
+import '../state/streak_provider.dart';
 import '../state/task_provider.dart';
 import '../widgets/add_task_sheet.dart';
 import '../widgets/command_palette.dart';
@@ -64,6 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final AnalyticsProvider analyticsProvider = context
         .watch<AnalyticsProvider>();
     final FocusProvider focusProvider = context.watch<FocusProvider>();
+    final StreakProvider streakProvider = context.watch<StreakProvider>();
     final Task? recommendedTask = taskProvider.recommendedTask;
 
     _searchService.updateSearchContext(
@@ -136,6 +138,27 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.only(bottom: 100),
                     child: Column(
                       children: <Widget>[
+                        if (streakProvider.currentStreak > 0)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                            child: Row(
+                              children: <Widget>[
+                                const Text(
+                                  '🔥',
+                                  style: TextStyle(fontSize: 20),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '${streakProvider.currentStreak} ${streakProvider.currentStreak == 1 ? 'Day' : 'Days'} Streak',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         FocusTimerCard(
                           remainingSecondsListenable:
                               focusProvider.remainingSecondsNotifier,
@@ -189,7 +212,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   const SizedBox(height: 8),
                                   if (recommendedTask != null) ...<Widget>[
                                     Text(
-                                      recommendedTask.title,
+                                      'Start with ${focusProvider.focusDurationMinutes} min on ${recommendedTask.title}',
                                       style: Theme.of(
                                         context,
                                       ).textTheme.titleSmall,
@@ -212,8 +235,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 .startFocus(recommendedTask),
                                       child: const Text('Start Focus'),
                                     ),
-                                  ] else
-                                    const Text('No tasks available'),
+                                  ] else ...<Widget>[
+                                    const Text('Start a 15 min warm-up session'),
+                                    const SizedBox(height: 12),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        context
+                                            .read<FocusProvider>()
+                                            .setFocusDurationMinutes(15);
+                                        context
+                                            .read<FocusProvider>()
+                                            .startFocusTimer();
+                                      },
+                                      child: const Text('Start Warm-up'),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -281,11 +317,32 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 8),
                         if (taskProvider.tasks.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 24),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 24),
                             child: Center(
-                              child: Text(
-                                'No tasks yet. Add one to get started.',
+                              child: Column(
+                                children: <Widget>[
+                                  const Text(
+                                    'Start your first focus session 🚀',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    'Add a task to get personalized suggestions',
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  ElevatedButton.icon(
+                                    onPressed: () =>
+                                        _showAddTaskSheet(context),
+                                    icon: const Icon(Icons.add),
+                                    label: const Text('+ Add First Task'),
+                                  ),
+                                ],
                               ),
                             ),
                           )

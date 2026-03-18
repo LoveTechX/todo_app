@@ -21,11 +21,13 @@ import 'services/sync_service.dart';
 import 'services/task_history_service.dart';
 import 'services/task_service.dart';
 import 'services/schedule_planner_service.dart';
+import 'services/streak_service.dart';
 import 'state/analytics_provider.dart';
 import 'state/focus_provider.dart';
 import 'state/focus_rooms_provider.dart';
 import 'state/planner_provider.dart';
 import 'state/productivity_coach_provider.dart';
+import 'state/streak_provider.dart';
 import 'state/task_provider.dart';
 import 'theme/app_theme.dart';
 
@@ -59,6 +61,10 @@ Future<void> main() async {
 
     if (!Hive.isBoxOpen(BehaviorPredictionService.boxName)) {
       await Hive.openBox<Map>(BehaviorPredictionService.boxName);
+    }
+
+    if (!Hive.isBoxOpen(StreakService.boxName)) {
+      await Hive.openBox(StreakService.boxName);
     }
   } catch (e) {
     debugPrint("Hive init error: $e");
@@ -141,6 +147,7 @@ class _TodoAppState extends State<TodoApp> {
   late final FocusRoomService _focusRoomService;
   late final FocusRoomsProvider _focusRoomsProvider;
   late final ProductivityCoachProvider _productivityCoachProvider;
+  late final StreakProvider _streakProvider;
 
   @override
   void initState() {
@@ -189,12 +196,15 @@ class _TodoAppState extends State<TodoApp> {
       behaviorPredictionService: behaviorPredictionService,
     );
 
+    _streakProvider = StreakProvider(streakService: StreakService());
+
     _focusProvider = FocusProvider(
       focusTimerService: FocusTimerService(),
       historyService: historyService,
       taskProvider: _taskProvider,
       plannerProvider: _plannerProvider,
       analyticsProvider: _analyticsProvider,
+      streakProvider: _streakProvider,
     );
 
     _focusRoomService = FocusRoomService();
@@ -246,6 +256,7 @@ class _TodoAppState extends State<TodoApp> {
         ChangeNotifierProvider<ProductivityCoachProvider>.value(
           value: _productivityCoachProvider,
         ),
+        ChangeNotifierProvider<StreakProvider>.value(value: _streakProvider),
       ],
       child: MaterialApp(
         title: 'Layered Todo',

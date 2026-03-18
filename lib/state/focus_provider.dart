@@ -8,6 +8,7 @@ import '../services/focus_timer_service.dart';
 import '../services/task_history_service.dart';
 import 'analytics_provider.dart';
 import 'planner_provider.dart';
+import 'streak_provider.dart';
 import 'task_provider.dart';
 
 class FocusProvider extends ChangeNotifier {
@@ -17,11 +18,13 @@ class FocusProvider extends ChangeNotifier {
     required TaskProvider taskProvider,
     required PlannerProvider plannerProvider,
     required AnalyticsProvider analyticsProvider,
+    StreakProvider? streakProvider,
   }) : _focusTimerService = focusTimerService,
        _historyService = historyService,
        _taskProvider = taskProvider,
        _plannerProvider = plannerProvider,
-       _analyticsProvider = analyticsProvider {
+       _analyticsProvider = analyticsProvider,
+       _streakProvider = streakProvider {
     remainingSecondsNotifier = ValueNotifier<int>(_focusDurationMinutes * 60);
   }
 
@@ -30,6 +33,7 @@ class FocusProvider extends ChangeNotifier {
   final TaskProvider _taskProvider;
   final PlannerProvider _plannerProvider;
   final AnalyticsProvider _analyticsProvider;
+  final StreakProvider? _streakProvider;
 
   late final ValueNotifier<int> remainingSecondsNotifier;
 
@@ -155,6 +159,7 @@ class FocusProvider extends ChangeNotifier {
           task.id,
         ]);
         _analyticsProvider.recordFocusSessionCompleted();
+        _streakProvider?.recordSessionCompleted();
       } catch (error, stackTrace) {
         debugPrint('FocusProvider._completeFocusedTask failed: $error');
         debugPrintStack(stackTrace: stackTrace);

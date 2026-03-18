@@ -23,11 +23,21 @@ class _FocusRoomsScreenState extends State<FocusRoomsScreen> {
       return;
     }
 
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Joined ${room.name}')),
+    );
     context.read<FocusProvider>().startFocusTimer();
   }
 
   Future<void> _leaveRoom(FocusRoom room) async {
     await context.read<FocusRoomsProvider>().leaveRoom(room.id);
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Left ${room.name}')),
+    );
   }
 
   @override
@@ -151,7 +161,7 @@ class _FocusRoomsScreenState extends State<FocusRoomsScreen> {
                             duration: const Duration(milliseconds: 220),
                             opacity: 1,
                             child: Text(
-                              '${joinedRoom.activeUsers.length} active users • ${joinedRoom.durationMinutes} min',
+                              '🟢 ${joinedRoom.activeUsers.length} focusing now • ${joinedRoom.durationMinutes} min',
                             ),
                           ),
                         ],
@@ -218,7 +228,7 @@ class _FocusRoomsScreenState extends State<FocusRoomsScreen> {
                         child: ListTile(
                           title: Text(room.name),
                           subtitle: Text(
-                            '${room.activeUsers.length} users • ${room.durationMinutes} min',
+                            '🟢 ${room.activeUsers.length} focusing now • ${room.durationMinutes} min',
                           ),
                           trailing: ElevatedButton(
                             onPressed: () =>
