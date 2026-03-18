@@ -42,8 +42,8 @@ class AnalyticsProvider extends ChangeNotifier {
       _todayFocusEvents = await _focusIntegrityService.getEventsForDay(
         DateTime.now(),
       );
-      _focusScore = _focusIntegrityService.calculateDailyScore(
-        _todayFocusEvents,
+      _focusScore = _clampScore(
+        _focusIntegrityService.calculateDailyScore(_todayFocusEvents),
       );
       _refreshSkippedSignal();
       notifyListeners();
@@ -107,8 +107,8 @@ class AnalyticsProvider extends ChangeNotifier {
     try {
       _focusIntegrityService.recordEvent(event);
       _todayFocusEvents.add(event);
-      _focusScore = _focusIntegrityService.calculateDailyScore(
-        _todayFocusEvents,
+      _focusScore = _clampScore(
+        _focusIntegrityService.calculateDailyScore(_todayFocusEvents),
       );
       _refreshSkippedSignal();
       notifyListeners();
@@ -157,4 +157,7 @@ class AnalyticsProvider extends ChangeNotifier {
 
     return !DateTime.now().isAfter(deadline);
   }
+
+  /// Ensures focus score never falls below 0.
+  int _clampScore(int score) => score < 0 ? 0 : score;
 }
